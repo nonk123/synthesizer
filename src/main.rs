@@ -1,13 +1,10 @@
+mod frontend;
 mod wav;
 
-use wav::WavStream;
+use crate::frontend::OctaveFrontend;
 
 fn main() {
-    let mut stream = WavStream::new();
-
-    for frequency in &[500, 600, 400, 500, 800, 900, 1000, 800, 600, 400, 300] {
-        stream.wave(0.5, *frequency as f32, 0.22);
-    }
-
-    stream.finish();
+    let mut octave = OctaveFrontend::new(90);
+    octave.read("31323334".to_string());
+    octave.finish();
 }
