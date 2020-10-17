@@ -1,30 +1,36 @@
 use std::io::{self, Write};
 
 struct Wave {
-    amplitude: i16,
-    frequency: u32,
-    samples: u32,
+    amplitude: f32,
+    frequency: f32,
 }
 
 impl Wave {
-    fn new(amplitude: i16, frequency: u32, samples: u32) -> Self {
-        Self { amplitude, frequency, samples }
+    fn new(amplitude: f32, frequency: f32) -> Self {
+        Self {
+            amplitude,
+            frequency,
+        }
     }
 
-    /// Return the sine wave value on specified sample.
-    fn sample(&self, index: u32) -> i16 {
-        let t = index as f32 / self.samples as f32;
-
-        let a = self.amplitude as f32;
-        let f = self.frequency as f32;
-
+    /// Return the wave value on specified time point.
+    fn plot(&self, t: f32) -> f32 {
         let tau = 2.0 * std::f32::consts::PI;
+        let omega = self.frequency * tau;
+        self.amplitude * (omega * t).sin()
+    }
 
-        let omega = f * tau;
+    /// Modulate the wave over a set of samples.
+    fn modulate(&self, sample_index: u32, total_samples: u32) -> f32 {
+        self.plot(sample_index as f32 / total_samples as f32)
+    }
+}
 
-        let y = a * (omega * t).sin();
+struct WaveSampler(Wave, u32);
 
-        y as i16
+impl WaveSampler {
+    fn sample(&self, i: u32) -> i16 {
+        self.0.modulate(i, self.1).round() as i16
     }
 }
 
@@ -32,7 +38,7 @@ pub struct WavStream {
     data_size: u32,
     bit_size: u16,
     sample_rate: u32,
-    waves: Vec<Wave>,
+    samplers: Vec<WaveSampler>,
 }
 
 impl WavStream {
@@ -41,15 +47,17 @@ impl WavStream {
             data_size: 0,
             bit_size: 16,
             sample_rate: 44100,
-            waves: Vec::new(),
+            samplers: Vec::new(),
         }
     }
 
     /// Add a wave with specified amplitude and amount of samples.
     ///
     /// "Abs" stands for "absolute"; the integer parameters are arbitrary.
-    pub fn wave_abs(&mut self, amplitude: i16, frequency: u32, samples: u32) {
-        self.waves.push(Wave::new(amplitude, frequency, samples));
+    pub fn wave_abs(&mut self, amplitude: f32, frequency: f32, samples: u32) {
+        let wave = Wave::new(amplitude, frequency);
+        self.samplers.push(WaveSampler(wave, samples));
+
         // Assuming one channel.
         self.data_size += self.bit_size as u32 / 8 * samples;
     }
@@ -58,11 +66,11 @@ impl WavStream {
     ///
     /// `amplitude` is a fraction of maximum amplitude.
     /// Amount of samples is calculated from `seconds`.
-    pub fn wave(&mut self, amplitude: f32, frequency: u32, seconds: f32) {
+    pub fn wave(&mut self, amplitude: f32, frequency: f32, seconds: f32) {
         let samples = (seconds * self.sample_rate as f32) as u32;
 
         let max_amplitude = 2u32.pow(self.bit_size as u32 - 1) as f32;
-        let amplitude = (max_amplitude * amplitude) as i16;
+        let amplitude = max_amplitude * amplitude;
 
         self.wave_abs(amplitude, frequency, samples);
     }
@@ -121,7 +129,8 @@ impl WavStream {
         self.write_u32(16);
         self.write_u16(1); // PCM format.
         self.write_u16(1); // Mono.
-                           // TODO: add channel count to calculations. It's currently fixed at 1.
+
+        // TODO: add channel count to calculations. It's currently fixed at 1.
         self.write_u32(self.sample_rate);
         self.write_u32(self.sample_rate * self.bit_size as u32 / 8);
         self.write_u16(self.bit_size / 8);
@@ -131,10 +140,10 @@ impl WavStream {
         self.write_chars(&['d', 'a', 't', 'a']);
         self.write_u32(self.data_size);
 
-        for wave in &self.waves {
+        for sampler in &self.samplers {
             // Assuming 16-bit chunks and one channel.
-            for i in 0..wave.samples {
-                self.write_i16(wave.sample(i));
+            for i in 0..sampler.1 {
+                self.write_i16(sampler.sample(i));
             }
         }
 
