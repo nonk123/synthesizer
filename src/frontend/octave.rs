@@ -1,5 +1,10 @@
 use crate::wav::WavStream;
 
+enum Note {
+    Silence,
+    Offset(i32),
+}
+
 /// This front-end allows using octaves instead of frequencies.
 pub struct OctaveFrontend {
     stream: WavStream,
@@ -17,7 +22,7 @@ impl OctaveFrontend {
     }
 
     fn wave(&mut self, frequency: f32, length: f32) {
-        let measure = 60.0 * 4.0 / self.tempo as f32; // 4/4
+        let measure = 60.0 * 4.0 / self.tempo as f32; // 4/4 time signature
         self.stream.wave(0.5, frequency, measure * length);
     }
 
@@ -32,14 +37,10 @@ impl OctaveFrontend {
     ///
     /// L and N are the first and the last character in the array. The second
     /// element is the sign of N.
-    fn parse_note(&self, chars: [char; 3]) -> (f32, i32) {
+    fn parse_note(&self, chars: [char; 3]) -> (f32, Note) {
         let [l, sign, n] = chars;
 
         if !l.is_digit(16) {
-            panic!("L is not a hexadecimal digit");
-        }
-
-        if !n.is_digit(16) {
             panic!("L is not a hexadecimal digit");
         }
 
@@ -49,7 +50,15 @@ impl OctaveFrontend {
         };
 
         let l = (l as i32 - '0' as i32) as f32;
-        let n = (n as i32 - '0' as i32) * sign;
+
+        let n = if n == '_' {
+            Note::Silence
+        } else if n.is_digit(16) {
+            let n = n as i32 - '0' as i32;
+            Note::Offset(n * sign)
+        } else {
+            panic!("L is not a hexadecimal digit nor '_'");
+        };
 
         (l, n)
     }
@@ -57,7 +66,7 @@ impl OctaveFrontend {
     /// Read a string of notes encoded like: <L1><N1><L2><L2>...
     ///
     /// Each LN cluster produces a note N away from starting note (can be
-    /// negative) of length 2^(-L + 1) measures.
+    /// negative or '_' for silence) of length 2^(-L + 1) measures.
     pub fn read(&mut self, string: String) {
         let mut i = 0;
 
@@ -80,7 +89,13 @@ impl OctaveFrontend {
             let n = ch(i - 1);
 
             let (l, n) = self.parse_note([l, sign, n]);
-            self.note(n, 2f32.powf(-l + 1.0));
+
+            let length = 2f32.powf(-l + 1.0);
+
+            match n {
+                Note::Offset(off) => self.note(off, length),
+                Note::Silence => self.wave(0.0, length),
+            }
         }
 
         if i > string.len() {
@@ -131,16 +146,15 @@ mod tests {
     #[test]
     fn one_note() {
         r("10");
-    }
-
-    #[test]
-    fn negative_note() {
         r("1-3");
+        r("FF");
+        r("F-F");
     }
 
     #[test]
-    fn hexadecimal() {
-        r("F-F");
+    fn silence() {
+        r("1_");
+        r("1-_");
     }
 
     #[test]

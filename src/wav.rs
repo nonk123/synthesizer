@@ -17,11 +17,12 @@ impl Wave {
     fn plot(&self, t: f32) -> f32 {
         let tau = 2.0 * std::f32::consts::PI;
         let omega = self.frequency * tau;
+
         self.amplitude * (omega * t).sin()
     }
 
-    /// Modulate the wave over a set of samples.
-    fn modulate(&self, sample_index: u32, total_samples: u32) -> f32 {
+    /// Quantize the wave over a set of samples.
+    fn quantize(&self, sample_index: u32, total_samples: u32) -> f32 {
         self.plot(sample_index as f32 / total_samples as f32)
     }
 }
@@ -30,7 +31,7 @@ struct WaveSampler(Wave, u32);
 
 impl WaveSampler {
     fn sample(&self, i: u32) -> i16 {
-        self.0.modulate(i, self.1).round() as i16
+        self.0.quantize(i, self.1).round() as i16
     }
 }
 
